@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+last_post_id.txt
+settings.txt
+.env
