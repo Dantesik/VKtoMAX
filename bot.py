@@ -160,14 +160,28 @@ def process_post_and_send(post):
     # Обработка вложений
     if atts:
         for a in atts:
-            if a['type'] == 'photo':
-                sizes = a['photo']['sizes']
-                best = sorted(sizes, key=lambda x: x.get('width', 0))[-1]
-                token = upload_photo_to_max(best['url'])
+            att_type = a.get('type')
+            if att_type == 'photo':
+                photo = a.get('photo', {})
+                sizes = photo.get('sizes') or []
+                if not sizes:
+                    log(f"⚠️ Skipped photo in post {post['id']}: no sizes found")
+                    continue
+
+                best = max(sizes, key=lambda x: x.get('width', 0) * x.get('height', 0))
+                photo_url = best.get('url')
+                if not photo_url:
+                    log(f"⚠️ Skipped photo in post {post['id']}: no URL in best size")
+                    continue
+
+                token = upload_photo_to_max(photo_url)
                 if token:
                     max_atts.append({"type": "image", "payload": {"token": token}})
-            elif a['type'] == 'video':
-                extra += f"\n🎥 Video: {a['video'].get('title', 'Video')}"
+                else:
+                    log(f"⚠️ Photo upload failed for post {post['id']}")
+            elif att_type == 'video':
+                video = a.get('video', {})
+                extra += f"\n🎥 Video: {video.get('title', 'Video')}"
 
     # Добавление кнопки-ссылки
     button_attachment = {
