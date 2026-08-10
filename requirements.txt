@@ -1,1 +1,5 @@
-requests
+aiohttp>=3.9.0
+python-dotenv>=1.0.0
+tenacity>=8.2.0
+yt-dlp>=2024.1.0
+maxapi>=2.2.4
