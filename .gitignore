@@ -1,5 +1,37 @@
-__pycache__/
-*.pyc
-last_post_id.txt
-settings.txt
+# Environment variables
 .env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+env/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Temporary files
+last_post_id.txt
+temp_video_*.mp4
+*.tmp
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
