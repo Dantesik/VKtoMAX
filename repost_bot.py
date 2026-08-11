@@ -770,29 +770,60 @@ async def periodic_check() -> None:
             await asyncio.sleep(30)
 
 
+async def check_internet() -> bool:
+    """Проверяет доступность интернета через DNS-запрос."""
+    import socket
+    try:
+        socket.setdefaulttimeout(3)
+        socket.getaddrinfo("platform-api2.max.ru", 443)
+        return True
+    except socket.gaierror:
+        return False
+
+
+async def wait_for_internet(max_wait: int = 300) -> None:
+    """Ждёт появления интернета до max_wait секунд."""
+    waited = 0
+    while not await check_internet():
+        if waited >= max_wait:
+            log(f"⚠️ Нет интернета {max_wait} секунд. Продолжаю запуск...")
+            break
+        log(f"🌐 Нет интернета. Жду 10 сек... ({waited}/{max_wait})")
+        await asyncio.sleep(10)
+        waited += 10
+
+
 async def main() -> None:
     print("=" * 50)
     print("🤖 БОТ ЗАПУЩЕН (с yt-dlp для видео и клипов)")
     print("=" * 50)
 
+    # Проверяем наличие обязательных настроек
     required = [VK_SERVICE_TOKEN, MAX_BOT_TOKEN, VK_GROUP_ID, MAX_CHAT_ID, ADMIN_ID]
     if any(not v for v in required):
         logger.critical("Отсутствуют переменные окружения")
         return
 
+    # Ждём появления интернета перед запуском
+    await wait_for_internet()
+
+    # Инициализируем HTTP-сессии
     await http.start()
     await vk_http.start()
 
+    # Инициализируем файл last_post_id, если его ещё нет
     if not os.path.exists(LAST_POST_FILE):
         first_post = await get_last_vk_post()
         if first_post:
             write_last_id(first_post["id"])
 
+    # Создаём бота
     try:
         bot = Bot(token=MAX_BOT_TOKEN, base_url=API_URL)
     except TypeError:
         bot = Bot(token=MAX_BOT_TOKEN)
 
+    # Обработка сигналов остановки
     loop = asyncio.get_running_loop()
 
     def _request_shutdown():
@@ -805,20 +836,40 @@ async def main() -> None:
         except (NotImplementedError, ValueError):
             pass
 
+    # Запускаем фоновую проверку с retry при сетевых ошибках
     periodic_task = asyncio.create_task(periodic_check())
 
-    try:
-        await dp.start_polling(bot)
-    finally:
-        log("Завершение...")
-        shutdown_event.set()
-        periodic_task.cancel()
+    # Запускаем бота с retry при ошибках подключения
+    bot_running = False
+    while not shutdown_event.is_set() and not bot_running:
         try:
-            await periodic_task
-        except asyncio.CancelledError:
-            pass
-        await http.close()
-        await vk_http.close()
+            log("Попытка подключения к MAX API...")
+            await dp.start_polling(bot)
+            bot_running = True
+        except Exception as e:
+            log(f"❌ Ошибка подключения к MAX: {e}")
+            if "getaddrinfo" in str(e) or "Cannot connect" in str(e):
+                log("🔄 Жду 30 секунд перед повторной попыткой...")
+                await asyncio.sleep(30)
+                # Пересоздаём сессию (DNS мог "залипнуть")
+                await http.close()
+                await vk_http.close()
+                await http.start()
+                await vk_http.start()
+            else:
+                log("💥 Неизвестная ошибка, завершение...")
+                break
+
+    # Корректное завершение
+    log("Завершение...")
+    shutdown_event.set()
+    periodic_task.cancel()
+    try:
+        await periodic_task
+    except asyncio.CancelledError:
+        pass
+    await http.close()
+    await vk_http.close()
 
 
 if __name__ == "__main__":
